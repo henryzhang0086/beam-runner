@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0e1a" />
+<title>独木闯关 · Beam Runner</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <!-- 触屏控制层（移动端显示） -->
+    <div id="touch-controls" class="hidden">
+      <button class="touch-btn" data-action="flip"  aria-label="换位">⇅</button>
+      <button class="touch-btn" data-action="item"  aria-label="道具">★</button>
+      <button class="touch-btn touch-jump" data-action="jump" aria-label="跳跃">⤒</button>
+    </div>
+
+    <!-- UI 覆盖层：所有菜单走 DOM，保证清晰与可访问 -->
+    <div id="overlay">
+      <!-- 主菜单 -->
+      <section id="screen-menu" class="screen">
+        <h1 class="title">独木闯关<span class="title-sub">BEAM&nbsp;RUNNER</span></h1>
+        <p class="tagline">一根独木 · 一跳一换位 · 闯到底</p>
+        <div class="menu-buttons">
+          <button class="btn primary" data-goto="endless">无限模式</button>
+          <button class="btn" data-goto="campaign">闯关模式</button>
+          <button class="btn" data-goto="versus">人机对决</button>
+          <button class="btn ghost" data-goto="howto">玩法说明</button>
+        </div>
+        <div class="best-line">最高分 <b id="menu-best">0</b> · 最远 <b id="menu-far">0</b>m</div>
+        <button id="btn-sound" class="icon-btn" title="音效开关">🔊</button>
+      </section>
+
+      <!-- 无限模式：普通/道具 选择 -->
+      <section id="screen-endless" class="screen hidden">
+        <h2 class="screen-title">无限模式</h2>
+        <p class="screen-desc">不断前进，越跑越快。每 30 个障碍出现金币奖励段，积分 200 / 400 / 600 进入困难段。</p>
+        <div class="menu-buttons">
+          <button class="btn primary" data-start="endless" data-variant="plain">普通赛</button>
+          <button class="btn" data-start="endless" data-variant="items">道具赛</button>
+        </div>
+        <button class="btn ghost back" data-goto="menu">返回</button>
+      </section>
+
+      <!-- 闯关模式：选关 -->
+      <section id="screen-campaign" class="screen hidden">
+        <h2 class="screen-title">闯关模式</h2>
+        <p class="screen-desc">每关地图与机关各不相同。捡道具、过机关、抵达终点。</p>
+        <div id="level-grid" class="level-grid"></div>
+        <button class="btn ghost back" data-goto="menu">返回</button>
+      </section>
+
+      <!-- 人机对决 -->
+      <section id="screen-versus" class="screen hidden">
+        <h2 class="screen-title">人机对决</h2>
+        <p class="screen-desc">同一张地图，限时比分高者胜。死亡一次扣分。右上角小窗观察对手。</p>
+        <div class="menu-buttons">
+          <button class="btn primary" data-start="versus" data-variant="plain">普通对决</button>
+          <button class="btn" data-start="versus" data-variant="items">道具对决</button>
+        </div>
+        <label class="diff-row">对手强度
+          <select id="ai-diff">
+            <option value="0">轻松</option>
+            <option value="1" selected>普通</option>
+            <option value="2">困难</option>
+          </select>
+        </label>
+        <button class="btn ghost back" data-goto="menu">返回</button>
+      </section>
+
+      <!-- 玩法说明 -->
+      <section id="screen-howto" class="screen hidden">
+        <h2 class="screen-title">玩法说明</h2>
+        <ul class="howto">
+          <li><b>地刺 1 格</b> —— 点一下<b>跳跃</b></li>
+          <li><b>地刺 2 格</b> —— 连点两下跳跃（二段跳）</li>
+          <li><b>地刺 3 格</b> —— 跳不过去，按<b>换位</b>翻到独木另一面</li>
+          <li><b>独木上下的金币</b> —— 记录分数</li>
+          <li><b>道具</b> —— 护盾 / 加速 / 加命 / 炸弹，按<b>道具键</b>使用</li>
+          <li>有 <b>3 次</b>容错机会</li>
+        </ul>
+        <div class="keys">
+          <div><span class="key">空格</span>/<span class="key">↑</span>/<span class="key">W</span> 跳跃</div>
+          <div><span class="key">Shift</span>/<span class="key">↓</span>/<span class="key">S</span> 换位</div>
+          <div><span class="key">E</span>/<span class="key">F</span>/<span class="key">回车</span> 用道具</div>
+          <div><span class="key">P</span>/<span class="key">Esc</span> 暂停</div>
+        </div>
+        <button class="btn ghost back" data-goto="menu">返回</button>
+      </section>
+
+      <!-- 暂停 -->
+      <section id="screen-pause" class="screen hidden modal">
+        <h2 class="screen-title">已暂停</h2>
+        <div class="menu-buttons">
+          <button class="btn primary" data-act="resume">继续</button>
+          <button class="btn" data-act="restart">重新开始</button>
+          <button class="btn ghost" data-act="quit">返回菜单</button>
+        </div>
+      </section>
+
+      <!-- 结算 -->
+      <section id="screen-over" class="screen hidden modal">
+        <h2 class="screen-title" id="over-title">游戏结束</h2>
+        <div class="result" id="over-result"></div>
+        <div class="menu-buttons">
+          <button class="btn primary" data-act="restart">再来一局</button>
+          <button class="btn ghost" data-act="quit">返回菜单</button>
+        </div>
+      </section>
+
+      <!-- 教程气泡（机关首次出现时） -->
+      <div id="tutorial-toast" class="toast hidden"></div>
+
+      <!-- 倒计时 -->
+      <div id="countdown" class="countdown hidden"></div>
+    </div>
+  </div>
+
+  <!-- 引擎与游戏脚本（顺序加载，零构建，可直接双击运行） -->
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/engine/storage.js"></script>
+  <script src="js/engine/input.js"></script>
+  <script src="js/engine/audio.js"></script>
+  <script src="js/engine/particles.js"></script>
+  <script src="js/engine/camera.js"></script>
+  <script src="js/world/background.js"></script>
+  <script src="js/entities/player.js"></script>
+  <script src="js/entities/obstacle.js"></script>
+  <script src="js/entities/coin.js"></script>
+  <script src="js/entities/item.js"></script>
+  <script src="js/world/levelgen.js"></script>
+  <script src="js/world/world.js"></script>
+  <script src="js/ai/opponent.js"></script>
+  <script src="js/ui/hud.js"></script>
+  <script src="js/ui/screens.js"></script>
+  <script src="js/engine/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
