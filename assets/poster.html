@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<style>
+  html,body{margin:0;padding:0;background:#0b0e1a;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1500" height="2100"></canvas>
+<script src="qrcode.js"></script>
+<script>
+const URL_SITE = 'https://henryzhang0086.github.io/beam-runner/';
+const C = {
+  bgTop:'#0b0e1a', bgBot:'#1a2342',
+  beam:'#3a4668', beamEdge:'#5a6da0', beamGrain:'#2b3450',
+  player:'#7cf2d1', playerDark:'#1d8f73', eye:'#0b0e1a',
+  spike:'#ff5d73', spikeDark:'#c0314a', spike3:'#ff9f43', spike3Dark:'#c46a12',
+  coin:'#ffd23f', coinEdge:'#b8860b',
+  text:'#e8edff', dim:'#8d97c4', accent:'#7cf2d1', accent2:'#56c2ff', gold:'#ffd23f',
+};
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const TAU = Math.PI*2;
+let rng_s = 20260627;
+function rnd(){ rng_s = (rng_s*1664525+1013904223)>>>0; return rng_s/4294967296; }
+
+function rr(x,y,w,h,r){ r=Math.min(r,w/2,h/2); ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function rgba(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+
+function background(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,C.bgTop); g.addColorStop(1,C.bgBot);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // 光晕
+  const rg = ctx.createRadialGradient(W*0.78,H*0.16,20,W*0.78,H*0.16,W*0.7);
+  rg.addColorStop(0,rgba('#9fb4ff',0.22)); rg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rg; ctx.fillRect(0,0,W,H);
+  // 星点
+  for(let i=0;i<160;i++){ const x=rnd()*W, y=rnd()*H*0.95, r=rnd()*2.4+0.5;
+    ctx.globalAlpha=0.2+rnd()*0.7; ctx.fillStyle='#cdd8ff';
+    ctx.beginPath(); ctx.arc(x,y,r,0,TAU); ctx.fill(); }
+  ctx.globalAlpha=1;
+  // 底部山脊
+  const ridges=[['#222e57',0.80,40],['#2a3868',0.88,28],['#323f72',0.95,18]];
+  for(const [col,base,amp] of ridges){
+    ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(0,H);
+    let y=H*base; ctx.lineTo(0,y);
+    for(let x=0;x<=W;x+=90){ y=H*base + Math.sin(x*0.01+base*8)*amp + (rnd()-0.5)*amp; ctx.lineTo(x,y); }
+    ctx.lineTo(W,H); ctx.closePath(); ctx.fill();
+  }
+}
+
+// 角色（teal 方块小人）。flip<0 表示翻到独木下方（上下颠倒）
+function character(x,y,s,opts){
+  opts=opts||{}; const flip=opts.flip||1, lean=opts.lean||0;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(lean); ctx.scale(1,flip);
+  const w=s*0.82, h=s*1.12;
+  // 拖尾
+  if(opts.trail){ for(let i=1;i<=4;i++){ ctx.globalAlpha=0.10*(1-i/5);
+    ctx.fillStyle=C.player; rr(-w/2-i*10, -h/2, w, h, w*0.32); ctx.fill(); } ctx.globalAlpha=1; }
+  const g=ctx.createLinearGradient(0,-h/2,0,h/2); g.addColorStop(0,C.player); g.addColorStop(1,C.playerDark);
+  ctx.fillStyle=g; ctx.shadowColor=rgba(C.player,0.6); ctx.shadowBlur=opts.glow||26;
+  rr(-w/2,-h/2,w,h,w*0.32); ctx.fill(); ctx.shadowBlur=0;
+  // 眼
+  ctx.fillStyle=C.eye; const er=w*0.13;
+  ctx.beginPath(); ctx.arc(w*0.16,-h*0.12,er,0,TAU); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.16+er*0.3,-h*0.12-er*0.3,er*0.4,0,TAU); ctx.fill();
+  // 腿
+  ctx.strokeStyle=C.playerDark; ctx.lineWidth=w*0.13; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-w*0.18,h*0.45); ctx.lineTo(-w*0.05,h*0.62);
+  ctx.moveTo(w*0.18,h*0.45); ctx.lineTo(w*0.3,h*0.60); ctx.stroke();
+  ctx.restore();
+}
+
+function spike(x,baseY,wd,hgt,up,tall){
+  const col=tall?C.spike3:C.spike, dk=tall?C.spike3Dark:C.spikeDark;
+  const tipY=baseY - up*hgt;
+  const g=ctx.createLinearGradient(x,baseY,x,tipY); g.addColorStop(0,dk); g.addColorStop(1,col);
+  ctx.fillStyle=g; ctx.shadowColor=rgba(col,0.5); ctx.shadowBlur=12;
+  ctx.beginPath(); ctx.moveTo(x,baseY); ctx.lineTo(x+wd,baseY); ctx.lineTo(x+wd/2,tipY); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur=0;
+}
+
+function coin(x,y,r){
+  ctx.save(); ctx.translate(x,y);
+  ctx.shadowColor=rgba(C.coin,0.7); ctx.shadowBlur=14;
+  const g=ctx.createLinearGradient(0,-r,0,r); g.addColorStop(0,'#fff3b0'); g.addColorStop(0.5,C.coin); g.addColorStop(1,C.coinEdge);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,r,0,TAU); ctx.fill(); ctx.shadowBlur=0;
+  ctx.fillStyle=rgba('#fff',0.75); ctx.font=`bold ${r*1.05}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('¥',0,0); ctx.restore();
+}
+
+function title(){
+  ctx.textAlign='center';
+  // 主标题
+  const ty=250;
+  ctx.font='900 168px system-ui, "PingFang SC","Microsoft YaHei", sans-serif';
+  const g=ctx.createLinearGradient(0,ty-150,0,ty+20); g.addColorStop(0,'#ffffff'); g.addColorStop(1,C.accent);
+  ctx.fillStyle=g; ctx.shadowColor=rgba(C.accent,0.5); ctx.shadowBlur=50;
+  ctx.fillText('独木闯关', W/2, ty); ctx.shadowBlur=0;
+  // 副标题
+  ctx.fillStyle=C.accent2; ctx.font='800 58px system-ui, sans-serif';
+  ctx.save(); ctx.translate(W/2,ty+86); // letterspacing 手动
+  const sub='BEAM  RUNNER'; ctx.fillText(sub,0,0); ctx.restore();
+  // tagline
+  ctx.fillStyle=C.dim; ctx.font='400 40px system-ui, sans-serif';
+  ctx.fillText('一根独木 · 一跳一换位 · 闯到底', W/2, ty+158);
+}
+
+// 玩法示意场景
+function scene(){
+  const top=820, beamY=1045, beamH=64; // beam 顶面在 beamY
+  // 独木
+  const bg=ctx.createLinearGradient(0,beamY,0,beamY+beamH);
+  bg.addColorStop(0,C.beamEdge); bg.addColorStop(0.15,C.beam); bg.addColorStop(0.85,C.beam); bg.addColorStop(1,C.beamGrain);
+  ctx.fillStyle=bg; ctx.fillRect(60,beamY,W-120,beamH);
+  ctx.fillStyle=rgba('#aab8e0',0.5); ctx.fillRect(60,beamY,W-120,3);
+  ctx.fillStyle=rgba('#000',0.3); ctx.fillRect(60,beamY+beamH-3,W-120,3);
+  ctx.strokeStyle=rgba(C.beamGrain,0.6); ctx.lineWidth=3;
+  for(let gx=110;gx<W-120;gx+=70){ ctx.beginPath(); ctx.moveTo(gx,beamY+4); ctx.lineTo(gx-18,beamY+beamH-4); ctx.stroke(); }
+
+  const cell=58;
+  // 三种地刺（上方），标注高度与操作
+  const spots=[ [330,1,'1 格 · 点跳跃',false], [690,2,'2 格 · 二段跳',false], [1080,3,'3 格 · 换位翻面',true] ];
+  for(const [x,hh,label,tall] of spots){
+    spike(x,beamY, 56, hh*cell, 1, tall);
+    if(tall){ ctx.fillStyle='#fff'; ctx.globalAlpha=0.9; ctx.beginPath(); ctx.arc(x+28,beamY-hh*cell,7,0,TAU); ctx.fill(); ctx.globalAlpha=1; }
+    ctx.fillStyle=tall?C.spike3:C.dim; ctx.font='700 30px system-ui, sans-serif'; ctx.textAlign='center';
+    ctx.fillText(label, x+28, beamY+beamH+52);
+  }
+  // 金币弧（在第1刺上方，配合跳跃）
+  for(let i=0;i<5;i++){ const t=i/4; const x=330+28 - 120 + t*240; const y=beamY-70 - Math.sin(t*Math.PI)*150; coin(x,y,24); }
+  // 跳跃中的角色（在 2 格刺上方）
+  character(690+28, beamY - 2*cell - 150, 130, {lean:-0.12, glow:30, trail:true});
+  // 虚线跳跃轨迹
+  ctx.strokeStyle=rgba(C.accent,0.5); ctx.lineWidth=4; ctx.setLineDash([10,12]);
+  ctx.beginPath(); ctx.moveTo(560,beamY-10); ctx.quadraticCurveTo(690+28, beamY-2*cell-230, 860,beamY-10); ctx.stroke(); ctx.setLineDash([]);
+
+  // 翻到独木下方的角色（对应 3 格刺，演示换位）
+  character(1080+28, beamY+beamH + cell + 96, 106, {flip:-1, glow:24});
+  // 换位箭头
+  ctx.strokeStyle=rgba(C.accent2,0.85); ctx.lineWidth=7; ctx.lineCap='round';
+  const ax=1080+28+150;
+  ctx.beginPath(); ctx.moveTo(ax,beamY-30); ctx.lineTo(ax,beamY+beamH+30); ctx.stroke();
+  // 双向箭头头
+  ctx.fillStyle=rgba(C.accent2,0.85);
+  ctx.beginPath(); ctx.moveTo(ax,beamY-44); ctx.lineTo(ax-14,beamY-14); ctx.lineTo(ax+14,beamY-14); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(ax,beamY+beamH+44); ctx.lineTo(ax-14,beamY+beamH+14); ctx.lineTo(ax+14,beamY+beamH+14); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=C.accent2; ctx.font='700 28px system-ui'; ctx.textAlign='left';
+  ctx.fillText('换位', ax+26, beamY+beamH/2+10);
+  // 下方零散金币
+  coin(200,beamY+beamH+70,22); coin(470,beamY+beamH+150,22); coin(900,beamY+beamH+90,22);
+}
+
+// 三模式胶囊
+function modes(){
+  const y=1452, items=[['∞','无限模式',C.accent],['▣','闯关模式',C.accent2],['⚔','人机对决',C.gold]];
+  const pw=400, ph=96, gap=30, totalW=items.length*pw+(items.length-1)*gap;
+  let x=(W-totalW)/2;
+  for(const [icon,name,col] of items){
+    ctx.fillStyle=rgba('#10162a',0.85); rr(x,y,pw,ph,22); ctx.fill();
+    ctx.strokeStyle=rgba(col,0.55); ctx.lineWidth=2.5; rr(x,y,pw,ph,22); ctx.stroke();
+    ctx.fillStyle=col; ctx.font='800 50px system-ui'; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(icon, x+34, y+ph/2+2);
+    ctx.fillStyle=C.text; ctx.font='800 44px system-ui';
+    ctx.fillText(name, x+108, y+ph/2+2);
+    x+=pw+gap;
+  }
+  ctx.textBaseline='alphabetic';
+}
+
+// QR 卡片
+function qrCard(){
+  const qr = qrcode(0,'H'); qr.addData(URL_SITE); qr.make();
+  const n = qr.getModuleCount();
+  const card= {w:760, h:470}, cx=(W-card.w)/2, cy=1580;
+  // 卡片
+  ctx.fillStyle='#10162a'; ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=40; ctx.shadowOffsetY=14;
+  rr(cx,cy,card.w,card.h,28); ctx.fill(); ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.strokeStyle=rgba(C.accent,0.5); ctx.lineWidth=2.5; rr(cx,cy,card.w,card.h,28); ctx.stroke();
+
+  // 文案（左侧）
+  const tx=cx+44, tyc=cy+card.h/2;
+  ctx.textAlign='left';
+  ctx.fillStyle=C.accent; ctx.font='900 70px system-ui'; ctx.fillText('扫码即玩', tx, cy+150);
+  ctx.fillStyle=C.text; ctx.font='600 40px system-ui'; ctx.fillText('手机扫码 · 免安装', tx, cy+222);
+  ctx.fillStyle=C.dim; ctx.font='400 33px system-ui'; ctx.fillText('打开即玩 · 也支持电脑', tx, cy+274);
+  ctx.fillStyle=C.accent2; ctx.font='600 27px ui-monospace, monospace';
+  ctx.fillText('henryzhang0086.github.io', tx, cy+360);
+  ctx.fillText('/beam-runner', tx, cy+398);
+
+  // 二维码（右侧白底）
+  const qs=360, qx=cx+card.w-qs-44, qy=cy+(card.h-qs)/2;
+  ctx.fillStyle='#ffffff'; rr(qx,qy,qs,qs,20); ctx.fill();
+  const quiet=26, area=qs-quiet*2, m=area/n;
+  ctx.fillStyle='#0b1020';
+  for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(qr.isDark(r,c))
+    ctx.fillRect(qx+quiet+c*m, qy+quiet+r*m, Math.ceil(m), Math.ceil(m));
+  // 中心 logo 圆（teal），不挡定位点
+  const lc=qx+qs/2, lr=m*2.6;
+  ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(lc,lc,lr+m*0.6,0,TAU); ctx.fill();
+  ctx.fillStyle=C.playerDark; ctx.beginPath(); ctx.arc(lc,lc,lr,0,TAU); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font=`800 ${lr*0.9}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('跳', lc, lc+2); ctx.textBaseline='alphabetic';
+}
+
+function footer(){
+  ctx.textAlign='center'; ctx.fillStyle=rgba(C.dim,0.8); ctx.font='400 28px system-ui';
+  ctx.fillText('重力翻面跑酷 · 三种模式 · 零下载网页即玩', W/2, 2070);
+}
+
+function draw(){
+  background();
+  title();
+  scene();
+  modes();
+  qrCard();
+  footer();
+  document.title='POSTER_READY';
+}
+draw();
+</script>
+</body>
+</html>
